@@ -1,18 +1,13 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Project Editor</title>
+    <title>Website Editor</title>
 </head>
 <body>
-    <h1>Project Editor</h1>
-    <h2>Edit Files</h2>
-    <ul>
-        {% for filename in filenames %}
-        <li><a href="{{ url_for('edit_file', filename=filename) }}">{{ filename }}</a></li>
-        {% endfor %}
-    </ul>
-    <a href="{{ url_for('download') }}">Download the updated project</a>
+    <h1>Wprowadź adres URL strony do edycji</h1>
+    <form action="/fetch" method="post">
+        <input type="text" name="url" placeholder="Adres URL" required>
+        <button type="submit">Pobierz stronę</button>
+    </form>
 </body>
 </html>
