@@ -1,84 +1,83 @@
-import os
+from flask import Flask, request, render_template, send_file, redirect, url_for
 import requests
+import os
+import shutil
 from bs4 import BeautifulSoup
-from flask import Flask, render_template, request, send_from_directory, redirect, url_for
-import zipfile
+from urllib.parse import urljoin, urlparse
 
 app = Flask(__name__)
 
-# Konfiguracja katalogów
-PROJECT_DIR = 'project'
-os.makedirs(PROJECT_DIR, exist_ok=True)
+# Ścieżka do lokalnych plików
+LOCAL_DIR = 'local_site'
 
-def fetch_website_data(url):
-    response = requests.get(url)
-    if response.status_code == 200:
-        return response.text
-    else:
-        raise Exception(f"Failed to fetch website data: Status code {response.status_code}")
-
-def save_file(content, filename):
-    with open(os.path.join(PROJECT_DIR, filename), 'w', encoding='utf-8') as file:
-        file.write(content)
-
-def update_project_with_website(url):
-    html_content = fetch_website_data(url)
-    soup = BeautifulSoup(html_content, 'html.parser')
-    
-    # Zapisz HTML
-    save_file(str(soup), 'index.html')
-    
-    # Zapisz CSS i JS z HTML
-    for link in soup.find_all('link', {'rel': 'stylesheet'}):
-        css_url = link.get('href')
-        if css_url:
-            css_content = fetch_website_data(css_url)
-            save_file(css_content, os.path.basename(css_url))
-    
-    for script in soup.find_all('script', {'src': True}):
-        js_url = script.get('src')
-        if js_url:
-            js_content = fetch_website_data(js_url)
-            save_file(js_content, os.path.basename(js_url))
-
-def create_zip_file():
-    zip_path = 'updated_project.zip'
-    with zipfile.ZipFile(zip_path, 'w') as zipf:
-        for root, dirs, files in os.walk(PROJECT_DIR):
-            for file in files:
-                zipf.write(os.path.join(root, file), os.path.relpath(os.path.join(root, file), PROJECT_DIR))
+def save_resource(url, base_url, folder):
+    """Pobiera i zapisuje zasób ze strony."""
+    try:
+        resource_url = urljoin(base_url, url)
+        parsed_url = urlparse(resource_url)
+        resource_path = os.path.join(folder, parsed_url.path.lstrip('/'))
+        os.makedirs(os.path.dirname(resource_path), exist_ok=True)
+        
+        response = requests.get(resource_url)
+        with open(resource_path, 'wb') as file:
+            file.write(response.content)
+            
+        return parsed_url.path
+    except Exception as e:
+        print(f"Nie udało się pobrać {url}: {e}")
+        return None
 
 @app.route('/')
-def home():
-    filenames = os.listdir(PROJECT_DIR)
-    return render_template('index.html', filenames=filenames)
+def index():
+    return render_template('index.html')
 
-@app.route('/edit/<filename>', methods=['GET', 'POST'])
-def edit_file(filename):
-    file_path = os.path.join(PROJECT_DIR, filename)
-    if request.method == 'POST':
-        new_content = request.form['content']
-        save_file(new_content, filename)
-        return redirect(url_for('home'))
-    
-    with open(file_path, 'r', encoding='utf-8') as file:
-        content = file.read()
-    
-    return render_template('edit.html', filename=filename, content=content)
+@app.route('/fetch', methods=['POST'])
+def fetch():
+    url = request.form['url']
+    response = requests.get(url)
+    if response.status_code == 200:
+        if os.path.exists(LOCAL_DIR):
+            shutil.rmtree(LOCAL_DIR)
+        os.makedirs(LOCAL_DIR, exist_ok=True)
+        
+        soup = BeautifulSoup(response.text, 'html.parser')
+        base_url = url
+        
+        # Pobierz wszystkie skrypty, arkusze stylów i inne zasoby
+        for tag in soup.find_all(['script', 'link', 'img']):
+            if tag.name == 'script' and tag.get('src'):
+                src = tag['src']
+                tag['src'] = save_resource(src, base_url, LOCAL_DIR)
+            elif tag.name == 'link' and tag.get('href') and 'stylesheet' in tag.get('rel', []):
+                href = tag['href']
+                tag['href'] = save_resource(href, base_url, LOCAL_DIR)
+            elif tag.name == 'img' and tag.get('src'):
+                src = tag['src']
+                tag['src'] = save_resource(src, base_url, LOCAL_DIR)
 
-@app.route('/files/<path:filename>')
-def serve_files(filename):
-    return send_from_directory(PROJECT_DIR, filename)
+        # Zapisz zaktualizowany HTML
+        with open(os.path.join(LOCAL_DIR, 'index.html'), 'w', encoding='utf-8') as file:
+            file.write(str(soup))
+            
+        return render_template('edit.html', html=str(soup))
+    else:
+        return "Błąd podczas pobierania strony.", 400
+
+@app.route('/edit', methods=['POST'])
+def edit():
+    new_html = request.form['html']
+    with open(os.path.join(LOCAL_DIR, 'index.html'), 'w', encoding='utf-8') as file:
+        file.write(new_html)
+    return redirect(url_for('preview'))
+
+@app.route('/preview')
+def preview():
+    return send_file(os.path.join(LOCAL_DIR, 'index.html'))
 
 @app.route('/download')
 def download():
-    create_zip_file()
-    return send_from_directory('.', 'updated_project.zip', as_attachment=True)
-
-def main():
-    url = input("Enter the URL of the website to scrape: ")
-    update_project_with_website(url)
-    app.run(port=5000, debug=True)
+    shutil.make_archive(LOCAL_DIR, 'zip', LOCAL_DIR)
+    return send_file(f"{LOCAL_DIR}.zip", as_attachment=True)
 
 if __name__ == "__main__":
-    main()
+    app.run(debug=True)
