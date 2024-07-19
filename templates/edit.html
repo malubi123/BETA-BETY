@@ -1,16 +1,16 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Edit {{ filename }}</title>
+    <title>Edit HTML</title>
 </head>
 <body>
-    <h1>Edit {{ filename }}</h1>
-    <form method="post">
-        <textarea name="content" rows="20" cols="80">{{ content }}</textarea><br>
-        <button type="submit">Save</button>
+    <h1>Edytuj HTML</h1>
+    <form action="/edit" method="post">
+        <textarea name="html" rows="20" cols="100">{{ html }}</textarea>
+        <button type="submit">Zapisz i podgląd</button>
     </form>
-    <a href="{{ url_for('home') }}">Back to home</a>
+    <form action="/download" method="get">
+        <button type="submit">Pobierz zedytowaną stronę</button>
+    </form>
 </body>
 </html>
